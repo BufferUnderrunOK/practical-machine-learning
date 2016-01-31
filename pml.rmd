@@ -1,0 +1,55 @@
+---
+title: "Weight Lifting Exercise Prediction"
+author: "Barrett W Nuzum"
+date: "January 28, 2016"
+output: html_document
+---
+
+The following is an effort to use Machine Learning on a portion of the HAR "Weight Lifting Exercise" dataset (herein WLED) to create a model to predict the "classe" outcome for a test set of the data, prepared by the instructors.
+
+The first question -- What the heck is the "Classe" outcome?
+
+According to the documentation, "Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). "
+
+Let's start by loading in useful packages and the training data.
+
+```{r}
+
+packages <- c('plyr', 'dplyr', 'caret', 'kernlab', 'e1071','AppliedPredictiveModeling')
+for (package in packages) {
+        if (!require(package, character.only=T, quietly=T)) {
+                install.packages(package, repos="http://cran.us.r-project.org")
+                library(package, character.only=T)
+        }
+}
+
+set.seed(8012) # A specific seed limits the randomness of random numbers retrieved and will help reproducibility.
+
+training <- read.csv('pml-training.csv')
+```
+
+
+So, by using sensor data, can we predict how well the exercise was performed?
+First, note that there are many, many variables in the dataset.
+
+Let's see just how many.
+```{r}
+colnames(training)
+```
+Wow.
+
+There are *four* primary types of sensors in this data -- Arm, Forearm, Belt and Dumbbell.
+
+```{r}
+summary(cars)
+```
+
+You can also embed plots, for example:
+
+```{r, echo=FALSE}
+plot(cars)
+```
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3yrZlHHgQ
