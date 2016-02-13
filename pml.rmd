@@ -5,17 +5,23 @@ date: "January 28, 2016"
 output: html_document
 ---
 
+# Synopsis
+
 The following is an effort to use Machine Learning on a portion of the HAR "Weight Lifting Exercise" dataset (herein WLED) to create a model to predict the "classe" outcome for a test set of the data, prepared by the instructors.
+
+By using sensor data, can we predict how well the exercise was performed?
+
+# What's in the data?
 
 The first question -- What the heck is the "Classe" outcome?
 
-According to the documentation, "Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). "
+According to the documentation[^1], "Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). "
 
 Let's start by loading in useful packages and the training data.
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 
-packages <- c('plyr', 'dplyr', 'caret', 'kernlab', 'e1071','AppliedPredictiveModeling')
+packages <- c('plyr', 'dplyr', 'caret', 'kernlab', 'e1071','AppliedPredictiveModeling', 'rattle', 'rpart', 'rpart.plot', 'gmodels')
 for (package in packages) {
         if (!require(package, character.only=T, quietly=T)) {
                 install.packages(package, repos="http://cran.us.r-project.org")
@@ -25,31 +31,116 @@ for (package in packages) {
 
 set.seed(8012) # A specific seed limits the randomness of random numbers retrieved and will help reproducibility.
 
-training <- read.csv('pml-training.csv')
+training <- read.csv('pml-training.csv', na.strings=c("NA","NaN", " ", "#DIV/0", ""))
 ```
 
-
-So, by using sensor data, can we predict how well the exercise was performed?
-First, note that there are many, many variables in the dataset.
-
+Note that there are many, many variables in the dataset.
 Let's see just how many.
 ```{r}
 colnames(training)
 ```
 Wow.
 
-There are *four* primary types of sensors in this data -- Arm, Forearm, Belt and Dumbbell.
+
+# Cleaning up the Data
+
+We begin by removing some variables that are clearly not of use.
+```{r}
+training <- training %>% select(-X, -user_name, -raw_timestamp_part_1, -raw_timestamp_part_2, -cvtd_timestamp, -new_window, -num_window)
+```
+
+Many of the variables are filled with NAs that will slow down automated feature selection.  <br/>
+Let's go through all the columns and all the rows and if any one column is more than, say, 30% NAs, let's remove the column completely.
+```{r}
+ncol(training)
+target <- nrow(training)
+threshold <- round( target * 0.3 )
+training2 <- training[, colSums(is.na(training))< threshold]
+ncol(training2)
+```
+
+Now, lets partition our data into a Training Set and a Test Set.
 
 ```{r}
-summary(cars)
+inMyTrain<- createDataPartition(y=training2$classe, p=0.7, list=FALSE)
+myTrain <- training2[inMyTrain,]
+myTesting <- training2[-inMyTrain,]
 ```
 
-You can also embed plots, for example:
 
-```{r, echo=FALSE}
-plot(cars)
+# Training Models
+
+Many of the model methods in caret will perform automated feature selection.
+We then try to see if they can handle this many variables.
+
+Let's try a Stochastic Gradient Boosting model.
+
+```{r}
+# We'll use Repeated k-fold Cross-Validation
+train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+fit.gbm.rcv <- train(classe ~ ., data = myTrain,
+                 trControl = train_control,
+                 method = "gbm",
+                 verbose = FALSE)
 ```
 
-Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+Let's see if Random Forest gives us a better result.
 
-Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3yrZlHHgQ
+```{r}
+fit.rf.cv <- train(classe ~ ., data = myTrain,
+                 trControl = train_control,
+                 method='rf', verbose=TRUE)
+```
+
+# Comparing Models
+Let's see which variables each model found important.
+```{r}
+varImps <- varImp(fit.gbm.rcv, 10)
+plot(varImps, top = 10, main = 'Variable Importance', sub = 'Gradient Boosting w/ K-Fold CV')
+
+rf.varImps <- varImp(fit.rf.cv, 10)
+plot(rf.varImps, top = 10, main = 'Variable Importance', sub = 'Random Forest w / CV')
+```
+
+We compare predictions from each model against our test set.
+
+```{r}
+gbmFitResults <- confusionMatrix(
+    predict(fit.gbm.rcv, newdata=myTesting),
+    myTesting$classe
+)
+rfFitResults <- confusionMatrix(
+    predict(fit.rf.cv, newdata=myTesting),
+    myTesting$classe
+)
+```
+
+Confusion Matrices will compare our predictions against the actual values found in the test set.
+
+```{r}
+# Stochastic Gradient Boosting Confusion Matrix
+gbmFitResults$table
+# Random Forest Confusion Matrix
+rfFitResults$table
+```
+
+```{r}
+# Stochastic Gradient Boosting By Class
+gbmFitResults$byClass
+# Random Forest Results By Class
+rfFitResults$byClass
+```
+
+```{r}
+overallRFfit <- data.frame(as.list(rfFitResults$overall)) %>% mutate(method = 'Random Forest')
+overallGBMfit <- data.frame(as.list(gbmFitResults$overall)) %>% mutate(method = 'Gradient Boosting')
+rbind(overallRFfit, overallGBMfit) %>% select(method, Accuracy, Kappa, AccuracyLower, AccuracyUpper, AccuracyNull)
+```
+
+# Conclusion
+
+The Random Forest method is a good choice to predict class values in this model.
+
+
+[^1]: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. http://groupware.les.inf.puc-rio.br/har#ixzz3yrZlHHgQ
